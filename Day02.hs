@@ -9,8 +9,7 @@ import Control.Applicative
 import qualified Data.Text as Text
 import qualified Data.Map.Strict as Map
 import qualified Common
-import Control.Monad.Identity (Identity)
-import qualified Control.Monad as Monad
+import Control.Monad.Identity
 import Data.Bool
 
 data Inst =
@@ -23,50 +22,45 @@ solvePart1 :: IO Inst
 solvePart1 =
   runSolverM [(1, 12), (2, 2)] $ Common.csvToInts "inputs/Day02.txt"
 
--- solvePart2 :: IO Inst
--- solvePart2 =
-  -- runSolverUntil <$> Common.csvToInts "inputs/Day02.txt"
-  -- where
-    -- isAnswer state = maybe False (==19690720) Map.lookup 0 state
-    -- foldM (\(noun, verb) inst ->
-      -- case inst of
-        -- (Next i state) -> isAnswer state inst
-    -- runSolverM [(1, noun), (2, verb)]
-    -- ) Next 0
--- (noun, verb) | noun <- [0..99], verb <- [0..99]]
+solvePart2 :: IO Inst
+solvePart2 =
+  runPart2Solver <$> Common.csvToInts "inputs/Day02.txt"
 
-runX :: IO Inst
-runX =
-  runSolverUntil <$> Common.csvToInts "inputs/Day02.txt"
+solvePart2ByMapping :: IO [Inst]
+solvePart2ByMapping = runPart2SolverMapping <$> Common.csvToInts "inputs/Day02.txt"
 
-{-
+-- A different strategy - use map + filter
+-- This is slower though since foldr short circuits when the result doesnt depend on the
+-- accumulator as per https://wiki.haskell.org/Foldr_Foldl_Foldl'
+runPart2SolverMapping :: [Int] -> [Inst]
+runPart2SolverMapping xs =
+  filter f $ map (\(noun, verb) -> solver [(1, noun), (2, verb)] xs)
+    [(noun, verb) | noun <- [0..99], verb <- [0..99]]
+  where
+    f (Halt _ state) = maybe False (==19690720) $ Map.lookup 0 state
+    f _ = False
 
--}
-runSolverUntil :: [Int] -> Inst
-runSolverUntil xs =
-  foldr (\(noun, verb) inst ->
-    case inst of
-      (Error msg) -> Error msg
-      (Halt i state) -> runNextOrStop inst state noun verb
-      (Next i state) -> bool (solver [(1, noun), (2, verb)] xs) inst $ isEq inst
-    ) (Next 0 (Map.fromList [(0, 0)])) [(noun, verb) | noun <- [0..99], verb <- [0..99]]
+runPart2Solver :: [Int] -> Inst
+runPart2Solver xs =
+  foldr
+    (\(noun, verb) inst ->
+      case inst of
+        (Halt _ state) -> check inst state noun verb
+        _              -> inst
+    ) (Halt 0 (Map.fromList [(0, 0)]))
+    [(noun, verb) | noun <- [0..99], verb <- [0..99]]
     where
-      runNextOrStop inst state noun verb = bool
-        (solver [(1, noun), (2, verb)] xs)
-        inst
+      check inst state noun verb =
+        bool (solver [(1, noun), (2, verb)] xs) inst
         $ maybe False (== 19690720) $ Map.lookup 0 state
 
+{-
+By passing in a Monad, instead of using IO, we can pass in
+the Identity Monad to test the behaviour without worrying about
+doing any IO but still testing the implementation.
 
-
-
-isEq :: Inst -> Bool
-isEq = \case
-  (Halt _ state) -> f state
-  (Next _ state) -> f state
-  _              -> False
-  where
-    f state = maybe False (== 19690720) $ Map.lookup 0 state
-
+runSolverM [] $ Identity [1,9,10,3,2,3,11,0,99,30,40,50]
+-}
 runSolverM :: Monad m =>
   [(Int, Int)]
   -> m [Int]
@@ -83,9 +77,9 @@ solver replacements =
     setup state = foldr (\(k, v) state' -> Map.insert k v state') state replacements
 
 runInstruction :: Inst -> Inst
-runInstruction (Next i m) =
-  runInstruction $ runNext i m
-runInstruction ins = ins
+runInstruction (Next i state) =
+  runInstruction $ runNext i state
+runInstruction inst = inst
 
 runNext ::
   Int
